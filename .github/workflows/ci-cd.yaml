@@ -1,98 +1,108 @@
-name: CI/CD Pipeline for Wisecow App (K8s & TLS)
+name: Wisecow CI/CD
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
+  workflow_dispatch: # Added to allow manual runs
 
-env:
-  # --- UPDATED WITH YOUR USERNAME ---
-  DOCKER_USERNAME: vijayalakshmi26 
-  DOCKER_IMAGE: vijayalakshmi26/wisecow
-  DOCKER_TAG: ${{ github.sha }}
-  # ---------------------------------
-  
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     
+    # Define environment variables, ensuring your username is used
+    env:
+      DOCKER_IMAGE: vijayalakshmi26/wisecow
+      MINIKUBE_HOME: ${{ github.workspace }}
+      
     steps:
-      # --- 1. CI: Checkout Code ---
-      - name: ⬇️ Checkout Repository
+      # --- 1. Checkout Code ---
+      - name: Checkout repository
         uses: actions/checkout@v3
-
-      # --- 2. CI: Setup Docker Buildx ---
-      - name: ⚙️ Set up Docker Buildx
+        
+      # --- 2. Docker Buildx Setup ---
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
         
-      # --- 3. CI: Docker Login ---
-      - name: 🔑 Login to Docker Hub
+      # --- 3. Docker Login ---
+      - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
-          username: ${{ env.DOCKER_USERNAME }} # Uses the username variable
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      # --- 4. CI: Build and Push Docker Image ---
-      - name: 🔨 Build and Push Docker Image
+          # Your username is correctly used here
+          username: vijayalakshmi26 
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          
+      # --- 4. CI: Build AND Push Docker Image (NEW/FIXED STEP) ---
+      - name: Build and Push Docker Image
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }}
-            ${{ env.DOCKER_IMAGE }}:latest
+          tags: ${{ env.DOCKER_IMAGE }}:latest
 
-      # --- 5. CD: Install Minikube/Kubectl ---
-      - name: 📦 Install K8s Tools (Minikube & Kubectl)
+      # --- 5. Install kubectl ---
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          
+      # --- 6. Install Minikube ---
+      - name: Install Minikube
         run: |
           curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
           chmod +x minikube
           sudo mv minikube /usr/local/bin/
-
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
-
-      # --- 6. CD: Start Minikube (FIXES VALIDATION ERROR) ---
-      - name: 🚀 Start Minikube and Wait for API Server Readiness
+          
+      # --- 7. Start Minikube (CRITICAL FIX: Adding Wait/Ingress) ---
+      - name: Start Minikube with Docker driver and Configure Addons
         run: |
           minikube start --driver=docker
           
-          echo "Waiting for Kubernetes API Server to be ready..."
+          # FIX: Wait for API server to be ready before applying manifests
+          echo "Waiting for Kubernetes API Server to be available..."
           kubectl wait --for=condition=Ready node/minikube --timeout=5m
-          sleep 5s
+          sleep 5s 
           
-          # Enable ingress (required for wisecow.local and port 443)
+          # Enable Ingress for external access and TLS termination
           minikube addons enable ingress
 
-      # --- 7. CD: Load Image into Minikube ---
-      - name: 🖼️ Load Image into Minikube
+      # --- 8. Load Docker image into Minikube ---
+      - name: Load Docker image into Minikube
         run: |
           minikube image load ${{ env.DOCKER_IMAGE }}:latest
           
-      # --- 8. CD: Install Cert-Manager (TLS Prerequisite) ---
-      - name: 🔑 Install Cert-Manager
+      # --- 9. TLS: Install Cert-Manager ---
+      - name: Install Cert-Manager (Required for TLS Certificates)
         run: |
           kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-          
-          # Wait for cert-manager deployments to become ready
+          # Wait for cert-manager pods to be ready
           kubectl wait --for=condition=Available deployment -n cert-manager --all --timeout=5m
-
-      # --- 9. CD: Deploy Application and TLS Resources ---
-      - name: 🚢 Deploy App, Service, Ingress, and TLS
-        run: |
-          # Make sure your k8s folder contains deployment.yaml, service.yaml, ingress.yaml, 
-          # issuer.yaml, and certificate.yaml
-          kubectl apply -f k8s/
           
-      # --- 10. Verification (Optional but Recommended) ---
-      - name: ✅ Verify Deployment and Certificate
+      # --- 10. Deploy Wisecow and TLS Resources ---
+      - name: Deploy Wisecow to Minikube
+        run: |
+          # Deploy Application Manifests
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+          kubectl apply -f ingress.yaml
+          
+          # Deploy TLS Manifests (Issuer and Certificate)
+          # Ensure these files are present in the repository root or update the paths
+          kubectl apply -f issuer.yaml
+          kubectl apply -f certificate.yaml
+          
+      # --- 11. Final Verification ---
+      - name: Verify deployment and TLS
         run: |
           kubectl get pods
-          kubectl get ing
-          kubectl get certificate
+          kubectl get svc
+          kubectl get ingress
+          kubectl get certificate # Check that the Certificate resource is being processed
           
+          # Final test using curl to the secure endpoint
           INGRESS_IP=$(minikube ip)
-          echo "Testing secure connection via Ingress..."
+          echo "Testing secure connection via Ingress on IP: $INGRESS_IP"
+          # -k ignores self-signed cert warning, --resolve maps hostname to Minikube IP
           curl -k --resolve wisecow.local:443:$INGRESS_IP https://wisecow.local
+
