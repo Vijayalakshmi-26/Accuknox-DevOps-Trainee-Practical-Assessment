@@ -8,7 +8,7 @@ spec:
   tls:
     - hosts:
         - wisecow.local
-      secretName: wisecow-tls
+      secretName: wisecow-tls-secret
   rules:
     - host: wisecow.local
       http:
