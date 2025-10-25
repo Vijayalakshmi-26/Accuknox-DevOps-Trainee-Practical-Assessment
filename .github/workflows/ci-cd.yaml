@@ -19,15 +19,12 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: vijayalakshmi26
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker image
+      - name: Build and push Docker image
         run: |
           docker build -t vijayalakshmi26/wisecow:latest .
-
-      - name: Push Docker image
-        run: |
           docker push vijayalakshmi26/wisecow:latest
 
   deploy:
@@ -49,7 +46,10 @@ jobs:
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
 
-      - name: Deploy Wisecow
+      - name: Deploy Wisecow to Kubernetes
         run: |
-          bash wisecow.sh
+          # Apply Deployment, Service, and Ingress
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+          kubectl apply -f ingress.yaml
 
