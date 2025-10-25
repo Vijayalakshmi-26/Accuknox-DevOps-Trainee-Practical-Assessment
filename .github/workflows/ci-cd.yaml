@@ -6,10 +6,8 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
-    env:
-      MINIKUBE_HOME: ${{ github.workspace }}
 
     steps:
       - name: Checkout repository
@@ -21,12 +19,24 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
-          username: vijayalakshmi26
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build Docker image
         run: |
           docker build -t vijayalakshmi26/wisecow:latest .
+
+      - name: Push Docker image
+        run: |
+          docker push vijayalakshmi26/wisecow:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Install kubectl
         run: |
@@ -34,30 +44,28 @@ jobs:
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
 
-      - name: Install Minikube
+      - name: Configure Kubeconfig
         run: |
-          curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-          chmod +x minikube
-          sudo mv minikube /usr/local/bin/
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
 
-      - name: Start Minikube with Docker driver
-        run: |
-          minikube start --driver=docker
-          minikube status
-
-      - name: Load Docker image into Minikube
-        run: |
-          minikube image load vijayalakshmi26/wisecow:latest
-
-      - name: Deploy Wisecow to Minikube
+      - name: Deploy Wisecow to Kubernetes
         run: |
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
           kubectl apply -f ingress.yaml
 
-      - name: Verify deployment
+      - name: Wait for pods to be ready
+        run: |
+          kubectl wait --for=condition=ready pod -l app=wisecow --timeout=120s
+
+      - name: Show pod status
         run: |
           kubectl get pods
           kubectl get svc
           kubectl get ingress
+
+      - name: Show Wisecow logs
+        run: |
+          kubectl logs -l app=wisecow
 
