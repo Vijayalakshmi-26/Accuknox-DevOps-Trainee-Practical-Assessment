@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MINIKUBE_HOME: ${{ github.workspace }}
-      CHANGE_MINIKUBE_NONE_USER: true
 
     steps:
       - name: Checkout repository
@@ -41,9 +40,9 @@ jobs:
           chmod +x minikube
           sudo mv minikube /usr/local/bin/
 
-      - name: Start Minikube
+      - name: Start Minikube with Docker driver
         run: |
-          sudo minikube start --driver=none
+          minikube start --driver=docker
           minikube status
 
       - name: Load Docker image into Minikube
@@ -56,7 +55,7 @@ jobs:
           kubectl apply -f service.yaml
           kubectl apply -f ingress.yaml
 
-      - name: Check pods and service
+      - name: Verify deployment
         run: |
           kubectl get pods
           kubectl get svc
