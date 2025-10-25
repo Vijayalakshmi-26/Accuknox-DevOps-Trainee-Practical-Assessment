@@ -42,7 +42,8 @@ main() {
         # We pipe the output of handleRequest (the HTTP response) into netcat.
         # nc -l -p $SRVPORT: Listen on port.
         # -q 1: Shut down 1 second after EOF, which forces the loop to restart immediately.
-        handleRequest | nc -l -p $SRVPORT -q 1
+       	handleRequest | nc -l -p $SRVPORT -q 1 -s 0.0.0.0
+
         
         # NOTE: A short sleep can be added here if needed, but often isn't necessary
         # sleep 0.01 
