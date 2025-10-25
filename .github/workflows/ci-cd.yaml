@@ -4,39 +4,38 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # Added to allow manual runs
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     
-    # Define environment variables, ensuring your username is used
     env:
       DOCKER_IMAGE: vijayalakshmi26/wisecow
       MINIKUBE_HOME: ${{ github.workspace }}
-      
+
     steps:
-      # --- 1. Checkout Code ---
+      # --- 1. Checkout repository ---
       - name: Checkout repository
         uses: actions/checkout@v3
-        
-      # --- 2. Docker Buildx Setup ---
+
+      # --- 2. Set up Docker Buildx ---
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
-        
-      # --- 3. Docker Login ---
+
+      # --- 3. Docker login ---
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
-          # Your username is correctly used here
-          username: vijayalakshmi26 
+          username: vijayalakshmi26
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          
-      # --- 4. CI: Build AND Push Docker Image (NEW/FIXED STEP) ---
+
+      # --- 4. Build and push Docker image ---
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v4
         with:
           context: .
+          file: ./Dockerfile       # Make sure your real Dockerfile is in the repo root
           push: true
           tags: ${{ env.DOCKER_IMAGE }}:latest
 
@@ -46,63 +45,50 @@ jobs:
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
-          
+
       # --- 6. Install Minikube ---
       - name: Install Minikube
         run: |
           curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
           chmod +x minikube
           sudo mv minikube /usr/local/bin/
-          
-      # --- 7. Start Minikube (CRITICAL FIX: Adding Wait/Ingress) ---
-      - name: Start Minikube with Docker driver and Configure Addons
+
+      # --- 7. Start Minikube and enable Ingress ---
+      - name: Start Minikube
         run: |
           minikube start --driver=docker
-          
-          # FIX: Wait for API server to be ready before applying manifests
-          echo "Waiting for Kubernetes API Server to be available..."
           kubectl wait --for=condition=Ready node/minikube --timeout=5m
-          sleep 5s 
-          
-          # Enable Ingress for external access and TLS termination
           minikube addons enable ingress
 
       # --- 8. Load Docker image into Minikube ---
       - name: Load Docker image into Minikube
         run: |
           minikube image load ${{ env.DOCKER_IMAGE }}:latest
-          
-      # --- 9. TLS: Install Cert-Manager ---
-      - name: Install Cert-Manager (Required for TLS Certificates)
+
+      # --- 9. Install cert-manager ---
+      - name: Install Cert-Manager
         run: |
           kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-          # Wait for cert-manager pods to be ready
           kubectl wait --for=condition=Available deployment -n cert-manager --all --timeout=5m
-          
-      # --- 10. Deploy Wisecow and TLS Resources ---
-      - name: Deploy Wisecow to Minikube
+
+      # --- 10. Deploy Wisecow manifests ---
+      - name: Deploy Wisecow app
         run: |
-          # Deploy Application Manifests
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
           kubectl apply -f ingress.yaml
-          
-          # Deploy TLS Manifests (Issuer and Certificate)
-          # Ensure these files are present in the repository root or update the paths
           kubectl apply -f issuer.yaml
           kubectl apply -f certificate.yaml
-          
-      # --- 11. Final Verification ---
-      - name: Verify deployment and TLS
+
+      # --- 11. Verify deployment ---
+      - name: Verify deployment and test Ingress
         run: |
           kubectl get pods
           kubectl get svc
           kubectl get ingress
-          kubectl get certificate # Check that the Certificate resource is being processed
-          
-          # Final test using curl to the secure endpoint
+          kubectl get certificate
+
           INGRESS_IP=$(minikube ip)
           echo "Testing secure connection via Ingress on IP: $INGRESS_IP"
-          # -k ignores self-signed cert warning, --resolve maps hostname to Minikube IP
           curl -k --resolve wisecow.local:443:$INGRESS_IP https://wisecow.local
 
