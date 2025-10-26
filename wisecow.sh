@@ -1,34 +1,28 @@
-#!/usr/bin/env bash
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import subprocess
 
-SRVPORT=${SRVPORT:-4499}
+PORT = 4499
 
-prerequisites() {
-    # Check commands
-    for cmd in cowsay fortune; do
-        command -v "$cmd" >/dev/null 2>&1 || {
-            echo "Error: $cmd not installed"
-            exit 1
-        }
-    done
-}
+class WisecowHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
 
-handleRequest() {
-    # Generate HTTP response
-    echo -e "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n"
-    echo -e "<html><head><title>Wisecow Wisdom</title></head><body>"
-    echo -e "<h1>Wisecow Says:</h1>"
-    echo -e "<pre>$(fortune | cowsay)</pre>"
-    echo -e "</body></html>"
-}
+        # Get fortune | cowsay output
+        cow_output = subprocess.getoutput("fortune | cowsay")
+        response = f"""
+        <html>
+        <head><title>Wisecow Wisdom</title></head>
+        <body>
+        <h1>Wisecow Says:</h1>
+        <pre>{cow_output}</pre>
+        </body>
+        </html>
+        """
+        self.wfile.write(response.encode("utf-8"))
 
-main() {
-    prerequisites
-    echo "Wisdom server running on port $SRVPORT..."
-
-    # Use 'socat' instead of nc for reliable TCP serving
-    # Install socat in Dockerfile: apt-get install -y socat
-    socat TCP-LISTEN:$SRVPORT,reuseaddr,fork EXEC:"bash -c handleRequest"
-}
-
-main
+httpd = HTTPServer(('', PORT), WisecowHandler)
+print(f"Wisdom server running on port {PORT}...")
+httpd.serve_forever()
 
