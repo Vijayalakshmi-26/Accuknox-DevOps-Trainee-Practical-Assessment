@@ -1,43 +1,34 @@
 #!/usr/bin/env bash
 
-# Set the server port
 SRVPORT=${SRVPORT:-4499}
 
 prerequisites() {
-    # Check if necessary commands are available
-    command -v cowsay >/dev/null 2>&1 &&
-    command -v fortune >/dev/null 2>&1 &&
-    command -v nc >/dev/null 2>&1 ||
-        {
-            echo "Error: Missing prerequisites (cowsay, fortune, or netcat)."
+    # Check commands
+    for cmd in cowsay fortune; do
+        command -v "$cmd" >/dev/null 2>&1 || {
+            echo "Error: $cmd not installed"
             exit 1
         }
+    done
 }
 
 handleRequest() {
-    # Generate the full HTTP response dynamically
-    
-    # 1. Output HTTP headers
-    echo -e "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html\r\n\r\n"
-    
-    # 2. Output HTML body with cow wisdom
+    # Generate HTTP response
+    echo -e "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n"
     echo -e "<html><head><title>Wisecow Wisdom</title></head><body>"
     echo -e "<h1>Wisecow Says:</h1>"
-    
-    # Use <pre> tags to preserve the ASCII art formatting from cowsay
-    echo -e "<pre>"
-    fortune | cowsay
-    echo -e "</pre>"
-    
+    echo -e "<pre>$(fortune | cowsay)</pre>"
     echo -e "</body></html>"
 }
 
 main() {
     prerequisites
-    echo "Wisdom served continuously on port=$SRVPORT..."
-    while true; do
-        handleRequest | nc -l 0.0.0.0 4499 -k
-    done
+    echo "Wisdom server running on port $SRVPORT..."
+
+    # Use 'socat' instead of nc for reliable TCP serving
+    # Install socat in Dockerfile: apt-get install -y socat
+    socat TCP-LISTEN:$SRVPORT,reuseaddr,fork EXEC:"bash -c handleRequest"
 }
 
 main
+
