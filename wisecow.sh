@@ -37,7 +37,6 @@ main() {
     echo "Wisdom served continuously on port=$SRVPORT..."
     while true; do
         handleRequest | nc -l 0.0.0.0 4499 -k
-        sleep 0.1
     done
 }
 

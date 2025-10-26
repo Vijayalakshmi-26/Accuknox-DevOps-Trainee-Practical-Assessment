@@ -35,43 +35,53 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./Dockerfile       # Make sure your real Dockerfile is in the repo root
+          file: ./Dockerfile
           push: true
           tags: ${{ env.DOCKER_IMAGE }}:latest
 
-      # --- 5. Install kubectl ---
+      # --- 5. Allow TCP port 4499 using UFW ---
+      - name: Allow port 4499 via UFW
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ufw
+          sudo ufw allow 4499/tcp
+          sudo ufw allow 22/tcp
+          echo "y" | sudo ufw enable
+          sudo ufw status verbose
+
+      # --- 6. Install kubectl ---
       - name: Install kubectl
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
 
-      # --- 6. Install Minikube ---
+      # --- 7. Install Minikube ---
       - name: Install Minikube
         run: |
           curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
           chmod +x minikube
           sudo mv minikube /usr/local/bin/
 
-      # --- 7. Start Minikube and enable Ingress ---
+      # --- 8. Start Minikube and enable Ingress ---
       - name: Start Minikube
         run: |
           minikube start --driver=docker
           kubectl wait --for=condition=Ready node/minikube --timeout=5m
           minikube addons enable ingress
 
-      # --- 8. Load Docker image into Minikube ---
+      # --- 9. Load Docker image into Minikube ---
       - name: Load Docker image into Minikube
         run: |
           minikube image load ${{ env.DOCKER_IMAGE }}:latest
 
-      # --- 9. Install cert-manager ---
+      # --- 10. Install Cert-Manager ---
       - name: Install Cert-Manager
         run: |
           kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
           kubectl wait --for=condition=Available deployment -n cert-manager --all --timeout=5m
 
-      # --- 10. Deploy Wisecow manifests ---
+      # --- 11. Deploy Wisecow manifests ---
       - name: Deploy Wisecow app
         run: |
           kubectl apply -f deployment.yaml
@@ -80,7 +90,7 @@ jobs:
           kubectl apply -f issuer.yaml
           kubectl apply -f certificate.yaml
 
-      # --- 11. Verify deployment ---
+      # --- 12. Verify deployment ---
       - name: Verify deployment and test Ingress
         run: |
           kubectl get pods
