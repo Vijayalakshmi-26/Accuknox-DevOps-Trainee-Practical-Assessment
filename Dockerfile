@@ -1,4 +1,4 @@
-FROM debian:stable-slim
+FROM python:3.12-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="$PATH:/usr/games"
@@ -7,15 +7,12 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         fortune-mod \
         cowsay \
-        socat \
-        bash \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY wisecow.sh /app/wisecow.sh
-RUN chmod +x /app/wisecow.sh
+COPY wisecow.py /app/wisecow.py
 
 EXPOSE 4499
 
-CMD ["bash", "/app/wisecow.sh"]
+CMD ["python3", "/app/wisecow.py"]
 

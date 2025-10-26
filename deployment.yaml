@@ -19,4 +19,11 @@ spec:
         image: vijayalakshmi26/wisecow:latest
         ports:
         - containerPort: 4499
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 4499
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
 
