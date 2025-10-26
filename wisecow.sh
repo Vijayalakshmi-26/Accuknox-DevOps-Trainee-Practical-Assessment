@@ -1,34 +1,46 @@
-#!/usr/bin/env python3
-import http.server
-import socketserver
-import subprocess
+#!/usr/bin/env bash
 
-PORT = 4499
+SRVPORT=4499
+RSPFILE=response
 
-class Handler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type','text/html')
-        self.end_headers()
+rm -f $RSPFILE
+mkfifo $RSPFILE
 
-        # Generate cowsay + fortune output
-        try:
-            output = subprocess.check_output(['bash','-c','fortune | cowsay'], text=True)
-        except Exception as e:
-            output = f"Error generating wisdom: {e}"
+get_api() {
+        read line
+        echo $line
+}
 
-        html = f"""
-        <html>
-        <head><title>Wisecow Wisdom</title></head>
-        <body>
-            <h1>Wisecow Says:</h1>
-            <pre>{output}</pre>
-        </body>
-        </html>
-        """
-        self.wfile.write(html.encode('utf-8'))
+handleRequest() {
+    # 1) Process the request
+        get_api
+        mod=`fortune`
 
-with socketserver.TCPServer(("", PORT), Handler) as httpd:
-    print(f"Wisecow serving on port {PORT}")
-    httpd.serve_forever()
+cat <<EOF > $RSPFILE
+HTTP/1.1 200
 
+
+<pre>`cowsay $mod`</pre>
+EOF
+}
+
+prerequisites() {
+        command -v cowsay >/dev/null 2>&1 &&
+        command -v fortune >/dev/null 2>&1 || 
+                { 
+                        echo "Install prerequisites."
+                        exit 1
+                }
+}
+
+main() {
+        prerequisites
+        echo "Wisdom served on port=$SRVPORT..."
+
+        while [ 1 ]; do
+                cat $RSPFILE | nc -lN $SRVPORT | handleRequest
+                sleep 0.01
+        done
+}
+
+main
