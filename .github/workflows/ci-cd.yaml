@@ -1,104 +1,66 @@
-name: Wisecow Full CI/CD
+name: Wisecow CI/CD
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 jobs:
-  full-deploy:
+  deploy:
     runs-on: ubuntu-latest
-
-    env:
-      DOCKER_IMAGE: vijayalakshmi26/wisecow
-
     steps:
-      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2️⃣ Set up Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl wget apt-transport-https ca-certificates software-properties-common conntrack
 
-      # 3️⃣ Log in to Docker Hub
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Install Docker
+        run: |
+          sudo apt-get remove -y docker docker-engine docker.io containerd runc
+          sudo apt-get update
+          sudo apt-get install -y docker.io
+          sudo systemctl enable docker --now
+          docker --version
 
-      # 4️⃣ Build and push Docker image
-      - name: Build and Push Docker Image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: ${{ env.DOCKER_IMAGE }}:latest
+      - name: Install Minikube
+        run: |
+          curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+          chmod +x minikube
+          sudo mv minikube /usr/local/bin/
+          minikube version
 
-      # 5️⃣ SSH into EC2 and set up Docker, Minikube, Kubernetes, and deploy Wisecow
-      - name: Full Deploy on EC2
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            echo "---- Updating system ----"
-            sudo apt-get update
-            sudo apt-get install -y curl apt-transport-https conntrack socat
+      - name: Start Minikube with supported Kubernetes
+        run: |
+          minikube start --driver=docker --kubernetes-version=v1.28.1
+          minikube status
 
-            echo "---- Installing Docker ----"
-            curl -fsSL https://get.docker.com -o get-docker.sh
-            sudo sh get-docker.sh
-            sudo usermod -aG docker $USER
+      - name: Enable Ingress addon
+        run: |
+          minikube addons enable ingress
+          sleep 10
 
-            echo "---- Installing Minikube ----"
-            curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-            chmod +x minikube
-            sudo mv minikube /usr/local/bin/
+      - name: Load Docker image into Minikube
+        run: |
+          minikube image load vijayalakshmi26/wisecow:latest
 
-            echo "---- Installing kubectl ----"
-            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-            chmod +x kubectl
-            sudo mv kubectl /usr/local/bin/
+      - name: Deploy Wisecow manifests
+        run: |
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+          kubectl apply -f ingress.yaml
+          kubectl apply -f issuer.yaml
+          kubectl apply -f certificate.yaml
 
-            echo "---- Starting Minikube ----"
-            minikube start --driver=docker --kubernetes-version=v1.27.4
-            kubectl wait --for=condition=Ready node/minikube --timeout=5m
+      - name: Wait for pods to be ready
+        run: |
+          kubectl wait --for=condition=Ready pods --all --namespace=default --timeout=180s
 
-            echo "---- Enabling Ingress ----"
-            minikube addons enable ingress
-
-            echo "---- Loading Docker image into Minikube ----"
-            minikube image load ${{ env.DOCKER_IMAGE }}:latest
-
-            echo "---- Installing Cert-Manager ----"
-            kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-            kubectl wait --for=condition=Available deployment -n cert-manager --all --timeout=5m
-
-            echo "---- Deploying Wisecow manifests ----"
-            kubectl apply -f deployment.yaml
-            kubectl apply -f service.yaml
-            kubectl apply -f ingress.yaml
-            kubectl apply -f issuer.yaml
-            kubectl apply -f certificate.yaml
-
-            echo "---- Verifying Deployment ----"
-            kubectl get pods
-            kubectl get svc
-            kubectl get ingress
-            kubectl get certificate
-
-            INGRESS_IP=$(minikube ip)
-            echo "---- Wisecow Ingress IP: $INGRESS_IP ----"
-
-            # Add to /etc/hosts on EC2 for testing
-            echo "$INGRESS_IP wisecow.local" | sudo tee -a /etc/hosts
-
-            # Test Wisecow
-            echo "---- Testing Wisecow ----"
-            curl -k --resolve wisecow.local:443:$INGRESS_IP https://wisecow.local
+      - name: Test Wisecow deployment
+        run: |
+          INGRESS_IP=$(minikube ip)
+          echo "Ingress IP: $INGRESS_IP"
+          curl -k --resolve wisecow.local:443:$INGRESS_IP https://wisecow.local
 
