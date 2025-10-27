@@ -20,12 +20,15 @@ spec:
         ports:
         - containerPort: 4499
         readinessProbe:
-          tcpSocket:
-            port: 4499
-          initialDelaySeconds: 120   # give the app time to start
-          periodSeconds: 10         # check every 10 seconds
-          timeoutSeconds: 5         # wait for response
-          failureThreshold: 12       # mark unready only after 6 failures
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "fortune | cowsay > /dev/null"
+          initialDelaySeconds: 30  # start checking after 30 seconds
+          periodSeconds: 10        # check every 10 seconds
+          timeoutSeconds: 5        # wait 5 seconds for command to succeed
+          failureThreshold: 6      # mark unready after 6 consecutive failures
           successThreshold: 1
         resources:
           requests:
