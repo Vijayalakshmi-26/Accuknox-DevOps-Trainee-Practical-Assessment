@@ -22,10 +22,10 @@ spec:
         readinessProbe:
           tcpSocket:
             port: 4499
-          initialDelaySeconds: 30   # give the app time to start
+          initialDelaySeconds: 120   # give the app time to start
           periodSeconds: 10         # check every 10 seconds
           timeoutSeconds: 5         # wait for response
-          failureThreshold: 6       # mark unready only after 6 failures
+          failureThreshold: 12       # mark unready only after 6 failures
           successThreshold: 1
         resources:
           requests:
