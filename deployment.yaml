@@ -20,13 +20,12 @@ spec:
         ports:
         - containerPort: 4499
         readinessProbe:
-          httpGet:
-            path: /
+          tcpSocket:
             port: 4499
-          initialDelaySeconds: 30   # give the app more time to start
-          timeoutSeconds: 5         # wait longer for response
+          initialDelaySeconds: 30   # give the app time to start
           periodSeconds: 10         # check every 10 seconds
-          failureThreshold: 6       # allow multiple failures before marking unready
+          timeoutSeconds: 5         # wait for response
+          failureThreshold: 6       # mark unready only after 6 failures
           successThreshold: 1
         resources:
           requests:
