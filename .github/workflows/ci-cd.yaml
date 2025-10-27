@@ -1,66 +1,61 @@
-name: Wisecow CI/CD
+name: CI/CD Minikube Deployment
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl wget apt-transport-https ca-certificates software-properties-common conntrack
-
-      - name: Install Docker
-        run: |
-          sudo apt-get remove -y docker docker-engine docker.io containerd runc
-          sudo apt-get update
-          sudo apt-get install -y docker.io
-          sudo systemctl enable docker --now
+          sudo apt-get install -y docker.io curl conntrack
+          sudo systemctl enable --now docker
           docker --version
 
       - name: Install Minikube
         run: |
-          curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-          chmod +x minikube
-          sudo mv minikube /usr/local/bin/
+          curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube_latest_amd64.deb
+          sudo dpkg -i minikube_latest_amd64.deb
           minikube version
 
-      - name: Start Minikube with supported Kubernetes
+      - name: Start Minikube
         run: |
-          minikube start --driver=docker --kubernetes-version=v1.28.1
+          minikube start --driver=docker --kubernetes-version=v1.28.0
           minikube status
-
-      - name: Enable Ingress addon
-        run: |
-          minikube addons enable ingress
-          sleep 10
 
       - name: Load Docker image into Minikube
         run: |
-          minikube image load vijayalakshmi26/wisecow:latest
+          docker build -t myapp:latest .
+          minikube image load myapp:latest
 
-      - name: Deploy Wisecow manifests
+      - name: Enable Ingress
+        run: minikube addons enable ingress
+
+      - name: Apply Kubernetes manifests
         run: |
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
-          kubectl apply -f ingress.yaml
           kubectl apply -f issuer.yaml
           kubectl apply -f certificate.yaml
+          kubectl apply -f ingress.yaml
 
-      - name: Wait for pods to be ready
+      - name: Update /etc/hosts for Minikube
         run: |
-          kubectl wait --for=condition=Ready pods --all --namespace=default --timeout=180s
+          IP=$(minikube ip)
+          echo "$IP wisecow.local" | sudo tee -a /etc/hosts
 
-      - name: Test Wisecow deployment
+      - name: Wait for Ingress and TLS
         run: |
-          INGRESS_IP=$(minikube ip)
-          echo "Ingress IP: $INGRESS_IP"
-          curl -k --resolve wisecow.local:443:$INGRESS_IP https://wisecow.local
+          kubectl wait --for=condition=ready certificate/wisecow-cert --timeout=120s
+          sleep 10
+
+      - name: Test Wisecow
+        run: |
+          curl -k https://wisecow.local
 
